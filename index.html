@@ -10,18 +10,18 @@
 <style>
 /* Layout: 全面キャンバス + 左の縦ツールレール + 上の浮きバー。UIは付箋の黄色を目印にする */
 :root{
-  --board:#f3f5f8; --dot:#c4ccd8; --panel:#ffffff; --line:#dbe0e8;
+  --board:#f3f5f8; --dot:#a9b3c2; --panel:#ffffff; --line:#dbe0e8;
   --fg:#1d2129; --muted:#5f6b7d; --accent:#ffd23a; --accent-ink:#1d2129;
   --sel:#2864dc; --shadow:0 6px 24px rgba(22,32,54,.12),0 1px 3px rgba(22,32,54,.08);
   --ui:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
   --hand:"Hiragino Maru Gothic ProN","Hiragino Maru Gothic Pro","Zen Maru Gothic","Noto Sans JP",sans-serif;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --board:#16181d; --dot:#2f343e; --panel:#22252c; --line:#353a45;
+  --board:#16181d; --dot:#454c59; --panel:#22252c; --line:#353a45;
   --fg:#e8eaee; --muted:#9aa3b2; --accent:#ffd23a; --accent-ink:#16181d;
   --sel:#7aa5ff; --shadow:0 6px 24px rgba(0,0,0,.45),0 1px 3px rgba(0,0,0,.3); color-scheme:dark}}
 :root[data-theme="dark"]{
-  --board:#16181d; --dot:#2f343e; --panel:#22252c; --line:#353a45;
+  --board:#16181d; --dot:#454c59; --panel:#22252c; --line:#353a45;
   --fg:#e8eaee; --muted:#9aa3b2; --accent:#ffd23a; --accent-ink:#16181d;
   --sel:#7aa5ff; --shadow:0 6px 24px rgba(0,0,0,.45),0 1px 3px rgba(0,0,0,.3); color-scheme:dark}
 [hidden]{display:none!important}
@@ -343,8 +343,10 @@ function readColors(){ C={board:cssVar('--board'),dot:cssVar('--dot'),sel:cssVar
 function draw(){
   raf=0; const {tx,ty,z}=view;
   ctx.setTransform(dpr,0,0,dpr,0,0); ctx.fillStyle=C.board; ctx.fillRect(0,0,W,H);
-  let s=24*z; while(s<14) s*=4; const ox=((tx%s)+s)%s, oy=((ty%s)+s)%s, ds=Math.min(2,Math.max(1.2,1.4*z));
-  ctx.fillStyle=C.dot; for(let x=ox;x<W;x+=s) for(let y=oy;y<H;y+=s) ctx.fillRect(x-ds/2,y-ds/2,ds,ds);
+  let s=24*z; while(s<18) s*=4; const ox=((tx%s)+s)%s, oy=((ty%s)+s)%s, dr=clamp(1.5*Math.sqrt(s/24),1.2,2.4);
+  ctx.fillStyle=C.dot; const D=new Path2D();
+  for(let x=ox;x<W;x+=s) for(let y=oy;y<H;y+=s){ D.moveTo(x+dr,y); D.arc(x,y,dr,0,Math.PI*2); }
+  ctx.fill(D);
   ctx.setTransform(dpr*z,0,0,dpr*z,dpr*tx,dpr*ty);
   const vx0=-tx/z,vy0=-ty/z,vx1=(W-tx)/z,vy1=(H-ty)/z;
   for(const it of items){ const b=bb(it); if(b[2]<vx0||b[0]>vx1||b[3]<vy0||b[1]>vy1) continue; drawItem(ctx,it,z*dpr); }
