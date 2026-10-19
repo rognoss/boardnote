@@ -98,6 +98,7 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .dfoot button{flex:1 1 auto;height:42px;border-radius:10px;font-size:14px;font-weight:700;padding:0 10px}
 .dfoot button:active{background:var(--line)}
 
+#ver{font-size:11px;color:var(--muted);padding:0 16px 10px;font-variant-numeric:tabular-nums}
 #toast{position:fixed;z-index:40;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
   padding:10px 16px;font-size:14px;max-width:calc(100% - 32px)}
 @media (max-width:560px){#status{display:none}#barL{max-width:calc(100% - 250px)}#boardName{max-width:26vw}}
@@ -138,6 +139,7 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
     <button id="backupBtn">バックアップ</button>
     <button id="restoreBtn">復元</button>
   </div>
+  <div id="ver"></div>
 </aside>
 <div id="toast" class="panel" hidden></div>
 <input type="file" id="imgFile" accept="image/*" hidden>
@@ -145,6 +147,7 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 
 <script>
 "use strict";
+const APP_VERSION='1.2', APP_DATE='2026-10-19';
 /* ============ 基本 ============ */
 const $=s=>document.querySelector(s);
 const cv=$('#board'),ctx=cv.getContext('2d');
@@ -835,8 +838,12 @@ async function boot(){
   if(idx&&Array.isArray(idx.boards)&&idx.boards.length){ boards=idx.boards; await openBoard(boards.some(b=>b.id===idx.cur)?idx.cur:boards[0].id); }
   else { boards=[]; const id=await createBoard('使い方',welcomeItems()); await openBoard(id); }
   setStatus('saved');
+  $('#ver').textContent=`ボードノート v${APP_VERSION}（${APP_DATE}）`;
+  try{ const pv=localStorage.getItem('bn.ver'); if(pv&&pv!==APP_VERSION) toast(`v${APP_VERSION} に更新しました`,3000); localStorage.setItem('bn.ver',APP_VERSION); }catch(e){}
   try{ if(navigator.storage&&navigator.storage.persist) navigator.storage.persist(); }catch(e){}
-  if('serviceWorker' in navigator&&location.protocol.startsWith('http')&&document.querySelector('link[rel="manifest"]')){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+  if('serviceWorker' in navigator&&location.protocol.startsWith('http')&&document.querySelector('link[rel="manifest"]')){ const hadCtl=!!navigator.serviceWorker.controller; let reloaded=false;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(!hadCtl||reloaded) return; reloaded=true; flush().then(()=>location.reload()); });
+    navigator.serviceWorker.register('sw.js').then(r=>{ r.update().catch(()=>{}); document.addEventListener('visibilitychange',()=>{ if(!document.hidden) r.update().catch(()=>{}); }); }).catch(()=>{}); }
   if(window.claude&&window.claude.use){ window.claude.use('downloads').then(d=>{downloadsApi=d}).catch(()=>{}); }
 }
 boot();
