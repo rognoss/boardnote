@@ -57,18 +57,20 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 #rail{position:fixed;left:calc(10px + env(safe-area-inset-left,0px));top:50%;transform:translateY(-50%);
   display:flex;flex-direction:column;gap:2px;padding:4px;z-index:20;max-height:calc(100% - 140px);overflow-y:auto}
 #rail .ib[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+#rail .ib{position:relative}
+#rail .cdot{position:absolute;right:6px;bottom:6px;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--panel);pointer-events:none}
 #rail .sep{width:28px;height:1px;margin:3px auto}
 
 /* flyout */
 #flyout{position:fixed;z-index:21;padding:8px;display:flex;flex-direction:column;gap:8px}
 .row{display:flex;gap:6px;align-items:center}
-.sw{width:32px;height:32px;border-radius:50%;border:2px solid var(--line);display:block}
+.sw{width:36px;height:36px;border-radius:50%;border:2px solid var(--line);display:block}
 .sw[aria-pressed="true"]{box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--fg)}
 .sw.sq{border-radius:7px}
-.sz{width:36px;height:36px;border-radius:9px;display:grid;place-items:center}
+.sz{width:40px;height:40px;border-radius:9px;display:grid;place-items:center}
 .sz span{display:block;border-radius:50%;background:var(--fg)}
 .sz[aria-pressed="true"],.shp[aria-pressed="true"]{background:var(--line)}
-.shp{width:36px;height:36px;border-radius:9px;display:grid;place-items:center}
+.shp{width:40px;height:40px;border-radius:9px;display:grid;place-items:center}
 
 /* selection tools */
 #seltools{position:fixed;z-index:22;display:flex;align-items:center;gap:2px;padding:3px}
@@ -147,7 +149,7 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 
 <script>
 "use strict";
-const APP_VERSION='1.2', APP_DATE='2026-10-19';
+const APP_VERSION='1.3', APP_DATE='2026-10-19';
 /* ============ 基本 ============ */
 const $=s=>document.querySelector(s);
 const cv=$('#board'),ctx=cv.getContext('2d');
@@ -383,6 +385,7 @@ stage.addEventListener('pointerdown',e=>{
   const [sx,sy]=pos(e), pid=e.pointerId;
   if(editing) endEdit();
   closePanels();
+  if(!$('#flyout').hidden){ flyOpen=false; $('#flyout').hidden=true; }
   if(e.pointerType==='touch'){
     if(penDown||now()-penUpAt<350){ ignored.add(pid); return; }
     touches.set(pid,{x:sx,y:sy,x0:sx,y0:sy});
@@ -653,7 +656,13 @@ $('#flyout').addEventListener('click',e=>{ const b=e.target.closest('button'); i
   if(b.dataset.col){ prefs.col[b.dataset.k]=b.dataset.col; }
   if(b.dataset.size){ prefs.size[b.dataset.k]=+b.dataset.size; }
   if(b.dataset.shape){ prefs.shape=b.dataset.shape; }
-  savePrefs(); buildFly(); });
+  savePrefs(); flyOpen=false; buildFly(); updDots(); });
+function updDots(){
+  rail.querySelectorAll('[data-tool]').forEach(btn=>{ const t=btn.dataset.tool; let c=null;
+    if(t==='pen'||t==='shape'||t==='text') c=ink(prefs.col[t]); else if(t==='hl') c=(HL[prefs.col.hl]||HL.yellow)[0]; else if(t==='note') c=(NOTE[prefs.col.note]||NOTE.yellow)[0];
+    let d=btn.querySelector('.cdot'); if(!c){ if(d) d.remove(); return; }
+    if(!d){ d=document.createElement('span'); d.className='cdot'; btn.appendChild(d); } d.style.background=c; });
+}
 
 /* 選択中のツール */
 const st=$('#seltools');
@@ -688,6 +697,23 @@ st.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) retu
     for(const it of all){ const n=cl(it); delete n.id; moveItem(n,off,off); addNew(n); map[it.id]=n.id; ch.push({id:n.id,b:null,a:cl(n)}); }
     ids.forEach(id=>sel.add(map[id])); commit(ch); render(); }
 });
+
+/* ペンシル・指で押したボタンは、離した瞬間に反応させる */
+let fastTap=null, suppressUntil=0;
+document.addEventListener('pointerdown',e=>{
+  if(e.pointerType==='mouse') return; const btn=e.target.closest&&e.target.closest('button');
+  if(!btn||btn.disabled) { fastTap=null; return; }
+  fastTap={btn,id:e.pointerId,x:e.clientX,y:e.clientY};
+},true);
+document.addEventListener('pointerup',e=>{
+  const f=fastTap; fastTap=null; if(!f||f.id!==e.pointerId) return;
+  const r=f.btn.getBoundingClientRect(), sl=14;
+  if(e.clientX<r.left-sl||e.clientX>r.right+sl||e.clientY<r.top-sl||e.clientY>r.bottom+sl) return;
+  if(Math.hypot(e.clientX-f.x,e.clientY-f.y)>30) return;
+  suppressUntil=now()+700; f.btn.click();
+},true);
+document.addEventListener('pointercancel',()=>{ fastTap=null; },true);
+document.addEventListener('click',e=>{ if(e.isTrusted&&now()<suppressUntil&&e.target.closest&&e.target.closest('button')){ e.stopPropagation(); e.preventDefault(); } },true);
 
 /* 上のバー */
 $('#undoBtn').onclick=undo; $('#redoBtn').onclick=redo;
@@ -807,7 +833,7 @@ document.addEventListener('keyup',e=>{ if(e.key===' ') spaceDown=false; });
 
 /* 画面・テーマ */
 function computeDark(){ const t=document.documentElement.dataset.theme; dark=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches); readColors(); }
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{ computeDark(); buildFly(); selKey=''; render(); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{ computeDark(); buildFly(); updDots(); selKey=''; render(); });
 new MutationObserver(()=>{ computeDark(); buildFly(); selKey=''; render(); }).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 function resize(){ dpr=Math.min(window.devicePixelRatio||1,3); const r=stage.getBoundingClientRect(); SR=r; W=r.width; H=r.height;
   for(const c of [cv,ov]){ c.width=Math.round(W*dpr); c.height=Math.round(H*dpr); c.style.width=W+'px'; c.style.height=H+'px'; }
@@ -833,7 +859,7 @@ function welcomeItems(){
 
 /* ============ 起動 ============ */
 async function boot(){
-  computeDark(); resize(); setTool(prefs.tool); $('#fingerBtn').setAttribute('aria-pressed',prefs.finger);
+  computeDark(); resize(); flyOpen=false; setTool(prefs.tool); updDots(); $('#fingerBtn').setAttribute('aria-pressed',prefs.finger);
   const idx=await sget('index');
   if(idx&&Array.isArray(idx.boards)&&idx.boards.length){ boards=idx.boards; await openBoard(boards.some(b=>b.id===idx.cur)?idx.cur:boards[0].id); }
   else { boards=[]; const id=await createBoard('使い方',welcomeItems()); await openBoard(id); }
