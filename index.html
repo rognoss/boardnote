@@ -63,7 +63,8 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 
 /* flyout */
 #flyout{position:fixed;z-index:21;padding:8px;display:flex;flex-direction:column;gap:8px}
-.row{display:flex;gap:6px;align-items:center}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#flyout .row{max-width:240px}
 .sw{width:36px;height:36px;border-radius:50%;border:2px solid var(--line);display:block}
 .sw[aria-pressed="true"]{box-shadow:0 0 0 2px var(--panel),0 0 0 4px var(--fg)}
 .sw.sq{border-radius:7px}
@@ -73,7 +74,19 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 .shp{width:40px;height:40px;border-radius:9px;display:grid;place-items:center}
 
 /* selection tools */
-#seltools{position:fixed;z-index:22;display:flex;align-items:center;gap:2px;padding:3px}
+#seltools{position:fixed;z-index:22;display:flex;flex-direction:column;gap:2px;padding:4px;max-width:calc(100vw - 24px)}
+.srow{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:2px}
+.tbn{height:40px;min-width:40px;padding:0 9px;border-radius:9px;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+.tbn[aria-pressed="true"]{background:var(--line)}
+.tbn:active{background:var(--line)}
+.lbl{font-size:13px;padding:0 4px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+#datepop{position:fixed;z-index:25;padding:10px;display:flex;flex-direction:column;gap:8px;width:min(310px,calc(100vw - 24px))}
+#datepop .row{max-width:none}
+#datepop .dh{font-weight:700;font-size:15px}
+#datepop .tbtn{width:100%;height:42px}
+#hview{display:flex;flex-direction:column;overflow:hidden}
+#hlist{overflow-y:auto;padding:0 6px 6px;display:flex;flex-direction:column;gap:2px}
+.hbar{display:flex;gap:6px;padding:6px 10px;align-items:center;flex-wrap:wrap}
 #seltools .sw{width:26px;height:26px;margin:0 2px}
 
 /* editor */
@@ -131,15 +144,18 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 <nav id="rail" class="panel" aria-label="道具"></nav>
 <div id="flyout" class="panel" hidden></div>
 <div id="seltools" class="panel" hidden></div>
+<div id="datepop" class="panel" hidden></div>
 
 <aside id="boards" class="panel" hidden>
-  <h2>ボード</h2>
+  <h2 id="bh2">ボード</h2>
   <div id="blist"></div>
+  <div id="hview" hidden></div>
   <div class="dfoot">
     <button id="newBoard">＋ 新しいボード</button>
     <button id="exportPng">画像で書き出す</button>
     <button id="backupBtn">バックアップ</button>
     <button id="restoreBtn">復元</button>
+    <button id="histBtn">このボードの履歴</button>
   </div>
   <div id="ver"></div>
 </aside>
@@ -149,7 +165,7 @@ svg.i{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stro
 
 <script>
 "use strict";
-const APP_VERSION='1.3', APP_DATE='2026-10-19';
+const APP_VERSION='1.5', APP_DATE='2026-10-19';
 /* ============ 基本 ============ */
 const $=s=>document.querySelector(s);
 const cv=$('#board'),ctx=cv.getContext('2d');
@@ -165,12 +181,14 @@ const r2=v=>Math.round(v*100)/100;
 
 const INK={ink:['#1d2129','#e8eaee','黒'],red:['#e03e45','#ff7276','赤'],blue:['#2864dc','#7aa5ff','青'],green:['#23935a','#52cf86','緑'],orange:['#e8820f','#ffad52','橙'],purple:['#7c4ee4','#ad91ff','紫']};
 const HL={yellow:['#ffd93b','黄'],green:['#6ee07e','緑'],pink:['#ff85bd','桃'],blue:['#6cbcff','水色']};
-const NOTE={yellow:['#fff09a','黄'],pink:['#ffcfe2','桃'],blue:['#c9e5ff','水色'],green:['#cff3c4','緑'],orange:['#ffd8a8','橙'],purple:['#e3d7ff','藤']};
+const NOTE={yellow:['#fff09a','黄'],orange:['#ffd8a8','橙'],pink:['#ffcfe2','桃'],purple:['#e3d7ff','藤'],indigo:['#d3d8f6','藍'],blue:['#c9e5ff','水色'],teal:['#c2ece5','青緑'],green:['#cff3c4','緑'],brown:['#e6d9cf','茶'],grey:['#dde3e8','灰']};
+const NSZ={S:120,M:220,L:320,LL:460};
+const DCOL=['yellow','orange','pink','purple','blue','green'];
 const SIZES={pen:[1.5,3,6],hl:[14,24,40],shape:[2,4,8],text:[22,34,56]};
 const ink=k=>(INK[k]||INK.ink)[dark?1:0];
 const HAND='"Hiragino Maru Gothic ProN","Hiragino Maru Gothic Pro","Zen Maru Gothic","Noto Sans JP",sans-serif';
 
-const prefs={tool:'pen',shape:'r',col:{pen:'ink',hl:'yellow',shape:'ink',note:'yellow',text:'ink'},size:{pen:1,hl:1,shape:1,text:1},finger:false};
+const prefs={multi:false,nsize:'M',tool:'pen',shape:'r',col:{pen:'ink',hl:'yellow',shape:'ink',note:'yellow',text:'ink'},size:{pen:1,hl:1,shape:1,text:1},finger:false};
 try{Object.assign(prefs,JSON.parse(localStorage.getItem('bn.prefs')||'{}'))}catch(e){}
 const savePrefs=()=>{try{localStorage.setItem('bn.prefs',JSON.stringify(prefs))}catch(e){}};
 
@@ -207,6 +225,7 @@ async function doFlush(){
   const ok=await sset('b:'+boardId,{items:items.map(cl)});
   const b=boards.find(b=>b.id===boardId); if(b){b.u=Date.now(); await sset('index',{boards,cur:boardId});}
   persistedOK=ok; setStatus(ok?'saved':'error', ok?null:'保存できません（ブラウザの設定を確認）');
+  if(ok&&Date.now()-lastSnap>SNAP_EVERY) await takeSnap();
 }
 let viewTimer=null;
 function saveView(){ clearTimeout(viewTimer); viewTimer=setTimeout(()=>{try{localStorage.setItem('bn.v.'+boardId,JSON.stringify(view))}catch(e){}},400); }
@@ -226,12 +245,14 @@ function updUndo(){ $('#undoBtn').disabled=!undoS.length; $('#redoBtn').disabled
 /* 形状 */
 const rad=(it,p)=>it.w*0.5*(0.35+0.85*p);
 function bb(it){
+  if(it.t==='c'){ const e=connEnds(it); if(!e) return [0,0,0,0]; const m=it.sw*4; return [Math.min(e[0],e[2])-m,Math.min(e[1],e[3])-m,Math.max(e[0],e[2])+m,Math.max(e[1],e[3])+m]; }
   if(it._bb) return it._bb; let b;
   if(it.t==='s'){ const p=it.pts; let x0=1e12,y0=1e12,x1=-1e12,y1=-1e12;
     for(let i=0;i<p.length;i+=3){ if(p[i]<x0)x0=p[i]; if(p[i]>x1)x1=p[i]; if(p[i+1]<y0)y0=p[i+1]; if(p[i+1]>y1)y1=p[i+1]; }
     const m=it.w*0.7; b=[x0-m,y0-m,x1+m,y1+m]; }
   else if(it.t==='a'){ const m=it.sw*4; b=[Math.min(it.x1,it.x2)-m,Math.min(it.y1,it.y2)-m,Math.max(it.x1,it.x2)+m,Math.max(it.y1,it.y2)+m]; }
   else if(it.t==='x'){ const L=textLay(it); b=[it.x,it.y,it.x+it.w,it.y+L.h]; }
+  else if(it.t==='k'){ let x1=-1e12,y1=-1e12; for(const B of calBlocks(it)){ x1=Math.max(x1,B.x+CAL.W*it.s); y1=Math.max(y1,B.y+CAL.H*it.s); } b=[it.x,it.y,x1,y1]; }
   else { const m=(it.t==='r'||it.t==='e')?it.sw/2:0; b=[it.x-m,it.y-m,it.x+it.w+m,it.y+it.h+m]; }
   return it._bb=b;
 }
@@ -244,6 +265,64 @@ function sPath(it){
   else { for(let i=0;i<p.length;i+=3){ const r=rad(it,p[i+2]); dot(P,p[i],p[i+1],r); if(i) seg(P,p[i-3],p[i-2],rad(it,p[i-1]),p[i],p[i+1],r); } }
   return it._p=P;
 }
+
+/* カレンダー */
+const CAL={W:280,H:276,head:42,dow:24,row:34,pad:8,gap:18};
+const DOWS='日月火水木金土';
+const dkey=(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+function calBlocks(it){ const s=it.s, n=it.n||1, v=it.lay==='v', per=v?Math.min(n,3):Math.min(n,4), out=[];
+  for(let i=0;i<n;i++){ const a=Math.floor(i/per), b=i%per, col=v?a:b, row=v?b:a, ym=it.ym+i;
+    out.push({x:it.x+col*(CAL.W+CAL.gap)*s, y:it.y+row*(CAL.H+CAL.gap)*s, yr:Math.floor(ym/12), m:((ym%12)+12)%12, i, last:i===n-1}); }
+  return out; }
+function calHit(it,x,y){ const s=it.s;
+  for(const B of calBlocks(it)){ const lx=x-B.x, ly=y-B.y, W=CAL.W*s;
+    if(lx<0||ly<0||lx>W||ly>CAL.H*s) continue;
+    if(ly<CAL.head*s){ if(B.i===0&&lx<48*s) return {kind:'prev'}; if(B.last&&lx>W-48*s) return {kind:'next'}; return {kind:'head'}; }
+    const top=(CAL.head+CAL.dow)*s; if(ly<top) return {kind:'body'};
+    const cw=(W-CAL.pad*2*s)/7, r=Math.floor((ly-top)/(CAL.row*s)), c=Math.floor((lx-CAL.pad*s)/cw);
+    if(c<0||c>6) return {kind:'body'};
+    const first=new Date(B.yr,B.m,1).getDay(), dim=new Date(B.yr,B.m+1,0).getDate(), d=r*7+c-first+1;
+    if(d>=1&&d<=dim) return {kind:'date',yr:B.yr,m:B.m,d,wx:B.x+CAL.pad*s+cw*(c+.5),wy:B.y+top+CAL.row*s*(r+.5)};
+    return {kind:'body'}; }
+  return null; }
+function rr(c,x,y,w,h,r){ c.beginPath(); if(c.roundRect) c.roundRect(x,y,w,h,r); else c.rect(x,y,w,h); }
+function drawCal(c,it,px){
+  const s=it.s, t=new Date(), tk=dkey(t.getFullYear(),t.getMonth(),t.getDate());
+  const body=dark?'#252932':'#ffffff', txt=dark?'#e8eaee':'#1d2129', mut=dark?'#8b94a5':'#6b7587', sun=dark?'#ff7b80':'#d93a41', sat=dark?'#7aa5ff':'#2a62d8';
+  const hc=(INK[it.hc]||INK.blue)[0], dc=it.dc||{};
+  for(const B of calBlocks(it)){ const W=CAL.W*s, H=CAL.H*s, hh=CAL.head*s;
+    c.save(); c.shadowColor=dark?'rgba(0,0,0,.5)':'rgba(25,35,60,.16)'; c.shadowBlur=Math.min(24,8*px); c.shadowOffsetY=Math.min(6,2*px);
+    c.fillStyle=body; rr(c,B.x,B.y,W,H,10*s); c.fill(); c.restore();
+    c.save(); rr(c,B.x,B.y,W,H,10*s); c.clip(); c.fillStyle=it.hc==='ink'&&dark?'#3a3f4b':hc; c.fillRect(B.x,B.y,W,hh); c.restore();
+    c.fillStyle='#ffffff'; c.font=`700 ${17*s}px ${HAND}`; c.textAlign='center'; c.textBaseline='middle';
+    c.fillText(`${B.yr}年${B.m+1}月`,B.x+W/2,B.y+hh/2);
+    c.strokeStyle='#ffffff'; c.lineWidth=2.4*s; c.lineCap='round'; c.lineJoin='round';
+    if(B.i===0){ const ax=B.x+22*s, ay=B.y+hh/2; c.beginPath(); c.moveTo(ax+4*s,ay-7*s); c.lineTo(ax-3*s,ay); c.lineTo(ax+4*s,ay+7*s); c.stroke(); }
+    if(B.last){ const ax=B.x+W-22*s, ay=B.y+hh/2; c.beginPath(); c.moveTo(ax-4*s,ay-7*s); c.lineTo(ax+3*s,ay); c.lineTo(ax-4*s,ay+7*s); c.stroke(); }
+    const cw=(W-CAL.pad*2*s)/7, top=B.y+(CAL.head+CAL.dow)*s;
+    c.font=`600 ${12*s}px ${HAND}`;
+    for(let i=0;i<7;i++){ c.fillStyle=i===0?sun:i===6?sat:mut; c.fillText(DOWS[i],B.x+CAL.pad*s+cw*(i+.5),B.y+hh+CAL.dow*s/2); }
+    const first=new Date(B.yr,B.m,1).getDay(), dim=new Date(B.yr,B.m+1,0).getDate();
+    c.font=`600 ${15*s}px ${HAND}`;
+    for(let d=1;d<=dim;d++){ const idx=first+d-1, r=Math.floor(idx/7), col=idx%7, cx=B.x+CAL.pad*s+cw*(col+.5), cy=top+CAL.row*s*(r+.5), k=dkey(B.yr,B.m,d);
+      const fill=dc[k]&&NOTE[dc[k]]?NOTE[dc[k]][0]:null;
+      if(fill){ c.fillStyle=fill; rr(c,cx-cw/2+2*s,cy-CAL.row*s/2+2*s,cw-4*s,CAL.row*s-4*s,6*s); c.fill(); }
+      if(k===tk){ c.strokeStyle=C.sel; c.lineWidth=2.2*s; c.beginPath(); c.arc(cx,cy,13*s,0,Math.PI*2); c.stroke(); }
+      c.fillStyle=fill?(col===0?'#c62f36':col===6?'#2457c5':'#22252b'):(col===0?sun:col===6?sat:txt); c.fillText(String(d),cx,cy+1*s); }
+  }
+}
+
+/* つなぐ矢印（付箋などを結ぶ。動かすとついてくる） */
+const CONNECTABLE=it=>it&&'nxirek'.includes(it.t);
+function edgePt(b,tx,ty){ const cx=(b[0]+b[2])/2, cy=(b[1]+b[3])/2, hw=(b[2]-b[0])/2, hh=(b[3]-b[1])/2;
+  const dx=tx-cx, dy=ty-cy; if(!dx&&!dy) return [cx,cy];
+  const t=Math.min(dx?hw/Math.abs(dx):1e9, dy?hh/Math.abs(dy):1e9); return [cx+dx*t,cy+dy*t]; }
+function connEnds(it){ const A=byId.get(it.a), B=byId.get(it.b); if(!A||!B) return null;
+  const ba=bb(A), bbB=bb(B), ca=[(ba[0]+ba[2])/2,(ba[1]+ba[3])/2], cb=[(bbB[0]+bbB[2])/2,(bbB[1]+bbB[3])/2];
+  const gap=it.sw*1.5, p1=edgePt(ba,cb[0],cb[1]), p2=edgePt(bbB,ca[0],ca[1]);
+  const L=Math.hypot(p2[0]-p1[0],p2[1]-p1[1])||1, ux=(p2[0]-p1[0])/L, uy=(p2[1]-p1[1])/L;
+  return [p1[0]+ux*gap,p1[1]+uy*gap,p2[0]-ux*gap,p2[1]-uy*gap]; }
+function linkedConns(ids){ const set=new Set(ids), out=[]; for(const it of items) if(it.t==='c'&&!set.has(it.id)&&(set.has(it.a)||set.has(it.b))) out.push(it.id); return out; }
 
 /* 文字の折り返し */
 const cw=new Map();
@@ -280,6 +359,7 @@ function hit(it,x,y,tol){
   const b=bb(it); if(x<b[0]-tol||x>b[2]+tol||y<b[1]-tol||y>b[3]+tol) return false;
   switch(it.t){
     case 'n': case 'x': case 'i': return true;
+    case 'k': return !!calHit(it,x,y);
     case 's': { const p=it.pts; if(p.length===3) return Math.hypot(x-p[0],y-p[1])<=it.w/2+tol;
       for(let i=3;i<p.length;i+=3){ const r=it.hl?it.w/2:rad(it,p[i+2]); if(dSeg(x,y,p[i-3],p[i-2],p[i],p[i+1])<=r+tol) return true; } return false; }
     case 'r': { const t=it.sw/2+tol, inX=x>=it.x-t&&x<=it.x+it.w+t, inY=y>=it.y-t&&y<=it.y+it.h+t;
@@ -287,33 +367,42 @@ function hit(it,x,y,tol){
     case 'e': { const rx=it.w/2,ry=it.h/2,cx=it.x+rx,cy=it.y+ry; if(rx<1||ry<1) return true;
       const d=Math.hypot((x-cx)/rx,(y-cy)/ry); return Math.abs(d-1)*Math.min(rx,ry)<=it.sw/2+tol; }
     case 'a': return dSeg(x,y,it.x1,it.y1,it.x2,it.y2)<=it.sw/2+tol;
+    case 'c': { const e=connEnds(it); return !!e&&dSeg(x,y,e[0],e[1],e[2],e[3])<=it.sw/2+tol; }
   } return false;
 }
-function topHit(x,y,tol,filter){ for(let i=items.length-1;i>=0;i--){ const it=items[i]; if(filter&&!filter(it)) continue; if(hit(it,x,y,tol)) return it; } return null; }
+function topHit(x,y,tol,filter){ for(const pass of [0,1]) for(let i=items.length-1;i>=0;i--){ const it=items[i]; if((it.t==='c')!==(pass===1)) continue; if(filter&&!filter(it)) continue; if(hit(it,x,y,tol)) return it; } return null; }
 
 /* 変形 */
 function moveItem(it,dx,dy){
+  if(it.t==='c') return;
   if(it.t==='s'){ const p=it.pts; for(let i=0;i<p.length;i+=3){ p[i]=r2(p[i]+dx); p[i+1]=r2(p[i+1]+dy);} }
   else if(it.t==='a'){ it.x1+=dx; it.y1+=dy; it.x2+=dx; it.y2+=dy; }
   else { it.x+=dx; it.y+=dy; }
   inval(it);
 }
 function scaleItem(it,ax,ay,f){
+  if(it.t==='c'){ it.sw*=f; return; }
+  if(it.t==='k'){ it.x=ax+(it.x-ax)*f; it.y=ay+(it.y-ay)*f; it.s*=f; inval(it); return; }
   const X=v=>ax+(v-ax)*f, Y=v=>ay+(v-ay)*f;
   if(it.t==='s'){ const p=it.pts; for(let i=0;i<p.length;i+=3){ p[i]=r2(X(p[i])); p[i+1]=r2(Y(p[i+1])); } it.w*=f; }
   else if(it.t==='a'){ it.x1=X(it.x1); it.y1=Y(it.y1); it.x2=X(it.x2); it.y2=Y(it.y2); it.sw*=f; }
   else { it.x=X(it.x); it.y=Y(it.y); it.w*=f; if(it.h!=null) it.h*=f; if(it.fs) it.fs*=f; if(it.sw) it.sw*=f; }
   inval(it);
 }
-function unionBB(list){ let b=null; for(const it of list){ const c=bb(it); if(!b) b=c.slice(); else { b[0]=Math.min(b[0],c[0]); b[1]=Math.min(b[1],c[1]); b[2]=Math.max(b[2],c[2]); b[3]=Math.max(b[3],c[3]); } } return b; }
+function unionBB(list){ let b=null; for(const it of list){ if(it.t==='c'&&!connEnds(it)) continue; const c=bb(it); if(!b) b=c.slice(); else { b[0]=Math.min(b[0],c[0]); b[1]=Math.min(b[1],c[1]); b[2]=Math.max(b[2],c[2]); b[3]=Math.max(b[3],c[3]); } } return b; }
 /* 付箋の上に書いた線は付箋と一緒に動く */
 function attachedTo(ids){
   const out=new Set(ids);
-  for(const id of ids){ const n=byId.get(id); if(!n||n.t!=='n') continue; const nb=bb(n);
-    for(const it of items){ if(out.has(it.id)||it.z<n.z||it.t==='n') continue; const b=bb(it);
+  for(const id of ids){ const n=byId.get(id); if(!n||!'nk'.includes(n.t)) continue; const nb=bb(n);
+    for(const it of items){ if(out.has(it.id)||it.z<n.z||'nkc'.includes(it.t)) continue; const b=bb(it);
       if(b[0]>=nb[0]-2&&b[1]>=nb[1]-2&&b[2]<=nb[2]+2&&b[3]<=nb[3]+2) out.add(it.id); } }
   return [...out];
 }
+
+/* グループ */
+function groupIds(id){ const it=byId.get(id); if(!it||!it.g) return [id]; return items.filter(o=>o.g===it.g).map(o=>o.id); }
+function selectWithGroup(id){ for(const g of groupIds(id)) sel.add(g); }
+function toggleWithGroup(id){ const g=groupIds(id); if(g.every(i=>sel.has(i))) g.forEach(i=>sel.delete(i)); else g.forEach(i=>sel.add(i)); }
 
 /* ============ 描画 ============ */
 const imgs=new Map();
@@ -330,6 +419,8 @@ function drawItem(c,it,px){
       const a=Math.atan2(it.y2-it.y1,it.x2-it.x1), L=Math.max(10,it.sw*4.5), s=0.48;
       c.beginPath(); c.moveTo(it.x1,it.y1); c.lineTo(it.x2,it.y2);
       c.moveTo(it.x2-L*Math.cos(a-s),it.y2-L*Math.sin(a-s)); c.lineTo(it.x2,it.y2); c.lineTo(it.x2-L*Math.cos(a+s),it.y2-L*Math.sin(a+s)); c.stroke(); break; }
+    case 'k': drawCal(c,it,px); break;
+    case 'c': { const e=connEnds(it); if(!e) break; drawArrow(c,e[0],e[1],e[2],e[3],ink(it.col),it.sw); break; }
     case 'n': { c.save(); c.shadowColor=dark?'rgba(0,0,0,.5)':'rgba(25,35,60,.18)'; c.shadowBlur=Math.min(30,10*px); c.shadowOffsetY=Math.min(8,3*px);
       c.fillStyle=(NOTE[it.bg]||NOTE.yellow)[0]; c.fillRect(it.x,it.y,it.w,it.h); c.restore();
       if(editing&&editing.id===it.id) break;
@@ -341,6 +432,9 @@ function drawItem(c,it,px){
     case 'i': { const e=getImg(it.src); if(e.ok) c.drawImage(e.img,it.x,it.y,it.w,it.h); else { c.fillStyle=dark?'#2a2e36':'#e4e8ee'; c.fillRect(it.x,it.y,it.w,it.h);} break; }
   }
 }
+function drawArrow(c,x1,y1,x2,y2,col,sw){ c.strokeStyle=col; c.lineWidth=sw; c.lineCap='round'; c.lineJoin='round';
+  const a=Math.atan2(y2-y1,x2-x1), L=Math.max(10,sw*4.5), s=0.48;
+  c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.moveTo(x2-L*Math.cos(a-s),y2-L*Math.sin(a-s)); c.lineTo(x2,y2); c.lineTo(x2-L*Math.cos(a+s),y2-L*Math.sin(a+s)); c.stroke(); }
 let raf=0; function render(){ if(!raf) raf=requestAnimationFrame(draw); }
 function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 let C={};
@@ -354,20 +448,31 @@ function draw(){
   ctx.fill(D);
   ctx.setTransform(dpr*z,0,0,dpr*z,dpr*tx,dpr*ty);
   const vx0=-tx/z,vy0=-ty/z,vx1=(W-tx)/z,vy1=(H-ty)/z;
-  for(const it of items){ const b=bb(it); if(b[2]<vx0||b[0]>vx1||b[3]<vy0||b[1]>vy1) continue; drawItem(ctx,it,z*dpr); }
+  for(const pass of [1,0]) for(const it of items){ if((it.t==='c')!==(pass===1)) continue; const b=bb(it); if(b[2]<vx0||b[0]>vx1||b[3]<vy0||b[1]>vy1) continue; drawItem(ctx,it,z*dpr); }
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  selBox=null;
+  if(prefs.tool==='select'){ const gm=new Map(); for(const it of items) if(it.g){ if(!gm.has(it.g)) gm.set(it.g,[]); gm.get(it.g).push(it); }
+    ctx.strokeStyle='#8b5cf6'; ctx.lineWidth=1.5; ctx.setLineDash([3,4]);
+    for(const list of gm.values()){ if(list.length<2) continue; const b=unionBB(list); if(!b) continue; const p=12;
+      ctx.strokeRect(b[0]*z+tx-p,b[1]*z+ty-p,(b[2]-b[0])*z+p*2,(b[3]-b[1])*z+p*2); }
+    ctx.setLineDash([]); }
+  selBox=null; connH=null;
   if(sel.size&&!(act&&(act.kind==='move'||act.kind==='scale'))||(act&&act.kind==='scale')){
     const b=unionBB([...sel].map(id=>byId.get(id)).filter(Boolean));
     if(b){ const p=6, x0=b[0]*z+tx-p,y0=b[1]*z+ty-p,x1=b[2]*z+tx+p,y1=b[3]*z+ty+p; selBox=[x0,y0,x1,y1];
       ctx.strokeStyle=C.sel; ctx.lineWidth=1.5; ctx.setLineDash([6,4]); ctx.strokeRect(x0,y0,x1-x0,y1-y0); ctx.setLineDash([]);
-      ctx.fillStyle=C.panel; ctx.beginPath(); ctx.arc(x1,y1,8,0,Math.PI*2); ctx.fill(); ctx.lineWidth=2.5; ctx.stroke(); }
+      ctx.fillStyle=C.panel; ctx.beginPath(); ctx.arc(x1,y1,8,0,Math.PI*2); ctx.fill(); ctx.lineWidth=2.5; ctx.stroke();
+      connH=null; const one=sel.size===1?byId.get([...sel][0]):null;
+      if(one&&CONNECTABLE(one)&&!act&&prefs.tool==='select'){ const mx=(x0+x1)/2,my=(y0+y1)/2,o=18;
+        connH={id:one.id,pts:[[mx,y0-o],[x1+o,my],[mx,y1+o],[x0-o,my]]};
+        for(const [hx,hy] of connH.pts){ ctx.fillStyle=C.sel; ctx.beginPath(); ctx.arc(hx,hy,9,0,Math.PI*2); ctx.fill();
+          ctx.strokeStyle=C.panel; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(hx-4,hy); ctx.lineTo(hx+4,hy); ctx.moveTo(hx,hy-4); ctx.lineTo(hx,hy+4); ctx.stroke(); } }
+    }
   }
   if(editing) placeEditor();
   $('#zoomBtn').textContent=Math.round(z*100)+'%';
   updSelTools();
 }
-let selBox=null;
+let selBox=null, connH=null;
 
 /* ============ 入力 ============ */
 let SR={left:0,top:0};
@@ -418,11 +523,13 @@ function startTool(e,sx,sy,ptype){
   if(t==='shape'){ act={kind:'shape',pid,ptype,x0:x,y0:y,item:shapeFrom(x,y,x,y)}; sel.clear(); render(); return; }
   if(t==='note'||t==='text'){ act={kind:'tap',pid,ptype,sx,sy}; return; }
   if(t==='select'){
+    if(connH){ for(const [hx,hy] of connH.pts) if(Math.hypot(sx-hx,sy-hy)<22){ act={kind:'connect',pid,ptype,from:connH.id,sx0:sx,sy0:sy,sx,sy,target:null}; drawConnect(); return; } }
     if(selBox&&Math.hypot(sx-selBox[2],sy-selBox[3])<24){ beginScale(pid,ptype,sx,sy); return; }
     const h=topHit(x,y,10/z);
+    if(h&&h.t==='k'&&!prefs.multi){ const ci=calHit(h,x,y); if(ci&&'prevnextdate'.includes(ci.kind)){ act={kind:'caltap',pid,ptype,sx,sy,x,y,id:h.id,ci}; return; } }
     if(h){ beginMove(pid,ptype,h,x,y); return; }
     if(ptype==='touch'){ act={kind:'pending',pid,ptype,sx,sy,hit:null}; return; }
-    act={kind:'marquee',pid,ptype,x0:sx,y0:sy,x1:sx,y1:sy}; sel.clear(); render(); return;
+    act={kind:'marquee',pid,ptype,x0:sx,y0:sy,x1:sx,y1:sy}; if(!prefs.multi) sel.clear(); render(); return;
   }
 }
 function shapeFrom(x0,y0,x1,y1){
@@ -431,15 +538,18 @@ function shapeFrom(x0,y0,x1,y1){
   return {t:prefs.shape,x:Math.min(x0,x1),y:Math.min(y0,y1),w:Math.abs(x1-x0),h:Math.abs(y1-y0),col,sw};
 }
 function beginMove(pid,ptype,h,x,y){
-  const wasOnly=sel.size===1&&sel.has(h.id);
-  if(!sel.has(h.id)){ sel.clear(); sel.add(h.id); }
+  const wasOnly=sel.size===1&&sel.has(h.id), wasIn=sel.has(h.id);
+  if(prefs.multi){ if(!wasIn) selectWithGroup(h.id); }
+  else if(!wasIn){ sel.clear(); selectWithGroup(h.id); }
   const ids=attachedTo([...sel]);
-  act={kind:'move',pid,ptype,ids,before:ids.map(id=>cl(byId.get(id))),lx:x,ly:y,moved:false,wasOnly,hitId:h.id,sx0:null};
+  act={kind:'move',pid,ptype,ids,before:ids.map(id=>cl(byId.get(id))),lx:x,ly:y,moved:false,wasOnly,wasIn,hitId:h.id,sx0:null};
   render();
 }
 function beginScale(pid,ptype,sx,sy){
   const list=[...sel].map(id=>byId.get(id)); const b=unionBB(list); const ids=attachedTo([...sel]);
   const [wx,wy]=toW(sx,sy); const d0=Math.max(1,Math.hypot(wx-b[0],wy-b[1]));
+  const one=list.length===1?list[0]:null;
+  if(one&&'nre'.includes(one.t)){ act={kind:'scale',free:true,pid,ptype,ids:[one.id],before:[cl(one)],ax:b[0],ay:b[1],d0}; render(); return; }
   act={kind:'scale',pid,ptype,ids,before:ids.map(id=>cl(byId.get(id))),ax:b[0],ay:b[1],d0}; render();
 }
 
@@ -474,11 +584,15 @@ function moveAct(e,evs,sx,sy){
   if(a.kind==='erase'){ for(const ev of evs){ const [qx,qy]=pos(ev); eraseAt(...toW(qx,qy)); } drawEraser(sx,sy); return; }
   if(a.kind==='shape'){ const [x,y]=toW(sx,sy); a.item=shapeFrom(a.x0,a.y0,x,y); octxClear(); octx.setTransform(dpr*z,0,0,dpr*z,dpr*view.tx,dpr*view.ty); drawItem(octx,a.item,z*dpr); return; }
   if(a.kind==='tap'){ return; }
+  if(a.kind==='connect'){ a.sx=sx; a.sy=sy; const [x,y]=toW(sx,sy); const h=topHit(x,y,6/z,it=>CONNECTABLE(it)&&it.id!==a.from); a.target=h?h.id:null; drawConnect(); return; }
   if(a.kind==='marquee'){ a.x1=sx; a.y1=sy; octxClear(); octx.setTransform(dpr,0,0,dpr,0,0);
     octx.fillStyle=C.sel+'1f'; octx.strokeStyle=C.sel; octx.lineWidth=1; const x=Math.min(a.x0,sx),y=Math.min(a.y0,sy),w=Math.abs(sx-a.x0),h=Math.abs(sy-a.y0);
     octx.fillRect(x,y,w,h); octx.strokeRect(x+.5,y+.5,w,h); return; }
   if(a.kind==='move'){ const [x,y]=toW(sx,sy); const dx=x-a.lx,dy=y-a.ly; if(!a.moved&&Math.hypot(dx,dy)*z<4) return;
     a.moved=true; for(const id of a.ids){ const it=byId.get(id); if(it) moveItem(it,dx,dy); } a.lx=x; a.ly=y; render(); return; }
+  if(a.kind==='scale'&&a.free){ const [x,y]=toW(sx,sy), it=byId.get(a.ids[0]), b0=a.before[0], m=40/z, pd=6/z;
+    it.w=Math.max(m,x-b0.x-pd); it.h=Math.max(m,y-b0.y-pd); inval(it); render(); return; }
+  if(a.kind==='caltap'){ if(Math.hypot(sx-a.sx,sy-a.sy)>10){ const h=byId.get(a.id); if(h){ beginMove(a.pid,a.ptype,h,a.x,a.y); moveAct(e,evs,sx,sy); } } return; }
   if(a.kind==='scale'){ const [x,y]=toW(sx,sy); const f=clamp(Math.hypot(x-a.ax,y-a.ay)/a.d0,0.05,40);
     a.ids.forEach((id,i)=>{ const it=byId.get(id); if(!it) return; for(const k in it) delete it[k]; Object.assign(it,cl(a.before[i])); scaleItem(it,a.ax,a.ay,f); });
     a.f=f; render(); return; }
@@ -501,15 +615,29 @@ function onUp(e){
     case 'draw': finishStroke(a); break;
     case 'erase': octxClear(); if(a.removed.length) commit(a.removed.map(b=>({id:b.id,b,a:null}))); break;
     case 'shape': { octxClear(); const it=a.item, big=it.t==='a'?Math.hypot(it.x2-it.x1,it.y2-it.y1):Math.max(it.w,it.h);
-      if(big*view.z>6){ addNew(it); commit([{id:it.id,b:null,a:cl(it)}]); } render(); break; }
+      if(big*view.z>6){
+        let ha=null,hb=null; if(it.t==='a'){ const tol=8/view.z; ha=topHit(it.x1,it.y1,tol,CONNECTABLE); hb=topHit(it.x2,it.y2,tol,CONNECTABLE); }
+        if(ha&&hb&&ha!==hb){ const c={t:'c',a:ha.id,b:hb.id,col:it.col,sw:it.sw}; addNew(c); commit([{id:c.id,b:null,a:cl(c)}]); toast('矢印でつなぎました',1200); }
+        else { addNew(it); commit([{id:it.id,b:null,a:cl(it)}]); } }
+      render(); break; }
     case 'marquee': { octxClear(); const [x0,y0]=toW(Math.min(a.x0,a.x1),Math.min(a.y0,a.y1)),[x1,y1]=toW(Math.max(a.x0,a.x1),Math.max(a.y0,a.y1));
       if(Math.abs(a.x1-a.x0)+Math.abs(a.y1-a.y0)<8){ tap(sx,sy,null); break; }
-      sel.clear(); for(const it of items){ const b=bb(it); if(b[0]<x1&&b[2]>x0&&b[1]<y1&&b[3]>y0) sel.add(it.id); } render(); break; }
+      if(!prefs.multi) sel.clear(); for(const it of items){ const b=bb(it); if(b[0]<x1&&b[2]>x0&&b[1]<y1&&b[3]>y0) selectWithGroup(it.id); } render(); break; }
     case 'move':
       if(a.moved) commit(a.ids.map((id,i)=>({id,b:a.before[i],a:cl(byId.get(id))})));
+      else if(prefs.multi){ if(a.wasIn) groupIds(a.hitId).forEach(i=>sel.delete(i)); markTap(sx,sy); }
       else { const it=byId.get(a.hitId); const dbl=isDouble(sx,sy); if(it&&(it.t==='n'||it.t==='x')&&(a.wasOnly||dbl)) startEdit(it,false); markTap(sx,sy); }
       render(); break;
+    case 'connect': { octxClear(); const A=byId.get(a.from); if(!A) break; const sw=3/view.z, ch=[];
+      if(a.target){ const c={t:'c',a:a.from,b:a.target,col:prefs.col.shape,sw}; addNew(c); ch.push({id:c.id,b:null,a:cl(c)}); commit(ch); toast('矢印でつなぎました',1200); }
+      else if(Math.hypot(a.sx-a.sx0,a.sy-a.sy0)>40){
+        const [x,y]=toW(a.sx,a.sy); const nb=bb(A); const w=A.t==='n'?A.w:220/view.z, h=A.t==='n'?A.h:220/view.z;
+        const n={t:'n',x:x-w/2,y:y-h/2,w,h,bg:A.t==='n'?A.bg:prefs.col.note,fs:A.t==='n'?A.fs:30/view.z,text:''}; addNew(n); ch.push({id:n.id,b:null,a:cl(n)});
+        const c={t:'c',a:a.from,b:n.id,col:prefs.col.shape,sw}; addNew(c); ch.push({id:c.id,b:null,a:cl(c)}); commit(ch);
+        sel.clear(); sel.add(n.id); }
+      render(); break; }
     case 'scale': commit(a.ids.map((id,i)=>({id,b:a.before[i],a:cl(byId.get(id))}))); render(); break;
+    case 'caltap': calAction(a.id,a.ci,sx,sy); break;
     case 'pan': break;
   }
 }
@@ -525,19 +653,29 @@ function tap(sx,sy,hitIt){
   markTap(sx,sy);
   if(dbl&&h&&(h.t==='n'||h.t==='x')){ startEdit(h,false); return; }
   const t=prefs.tool;
+  if(h&&h.t==='k'&&!(t==='select'&&prefs.multi)){ const ci=calHit(h,x,y); if(ci&&'prevnextdate'.includes(ci.kind)){ calAction(h.id,ci,sx,sy); return; } }
   if(t==='note'){ if(h&&h.t==='n'){ startEdit(h,false); return; }
-    const s=220/view.z; const n={t:'n',x:x-s/2,y:y-s/2,w:s,h:s,bg:prefs.col.note,fs:30/view.z,text:''};
+    const px0=NSZ[prefs.nsize]||220, s=px0/view.z; const n={t:'n',x:x-s/2,y:y-s/2,w:s,h:s,bg:prefs.col.note,fs:px0*0.136/view.z,text:''};
     n.id=uid(); n.z=++maxZ; insertItem(n); setTool('select'); sel.clear(); sel.add(n.id); startEdit(n,true); return; }
   if(t==='text'){ if(h&&h.t==='x'){ startEdit(h,false); return; }
     const fs=SIZES.text[prefs.size.text]/view.z; const it={t:'x',x,y:y-fs*0.65,w:Math.max(160,W*0.45)/view.z,fs,col:prefs.col.text,text:''};
     it.id=uid(); it.z=++maxZ; insertItem(it); setTool('select'); sel.clear(); sel.add(it.id); startEdit(it,true); return; }
-  if(t==='select'){ sel.clear(); if(h) sel.add(h.id); render(); return; }
+  if(t==='select'){ if(prefs.multi){ if(h) toggleWithGroup(h.id); else sel.clear(); } else { sel.clear(); if(h) selectWithGroup(h.id); } render(); return; }
 }
 
 function finishStroke(a){
   const it=a.item, p=it.pts;
   if(!it.hl&&p.length>=9){ const q=p.slice(); for(let i=3;i<p.length-3;i+=3){ q[i]=r2((p[i-3]+2*p[i]+p[i+3])/4); q[i+1]=r2((p[i-2]+2*p[i+1]+p[i+4])/4);} it.pts=q; }
   addNew(it); commit([{id:it.id,b:null,a:cl(it)}]); octxClear(); render();
+}
+function drawConnect(){
+  const a=act, A=byId.get(a.from); if(!A) return; octxClear(); const z=view.z;
+  octx.setTransform(dpr*z,0,0,dpr*z,dpr*view.tx,dpr*view.ty);
+  const [px,py]=toW(a.sx,a.sy); let tgt=a.target?byId.get(a.target):null;
+  const sw=3/z, from=edgePt(bb(A),tgt?(bb(tgt)[0]+bb(tgt)[2])/2:px,tgt?(bb(tgt)[1]+bb(tgt)[3])/2:py);
+  let to=[px,py]; if(tgt){ const b=bb(tgt); const ca=[(bb(A)[0]+bb(A)[2])/2,(bb(A)[1]+bb(A)[3])/2]; to=edgePt(b,ca[0],ca[1]);
+    octx.strokeStyle=C.sel; octx.lineWidth=2/z; octx.setLineDash([6/z,4/z]); octx.strokeRect(b[0]-4/z,b[1]-4/z,b[2]-b[0]+8/z,b[3]-b[1]+8/z); octx.setLineDash([]); }
+  drawArrow(octx,from[0],from[1],to[0],to[1],C.sel,sw);
 }
 function octxClear(){ octx.setTransform(1,0,0,1,0,0); octx.clearRect(0,0,ov.width,ov.height); }
 function liveDraw(first){
@@ -553,7 +691,7 @@ function liveDraw(first){
 function drawEraser(sx,sy){ octxClear(); octx.setTransform(dpr,0,0,dpr,0,0); octx.strokeStyle=C.sel; octx.lineWidth=1.5; octx.beginPath(); octx.arc(sx,sy,14,0,Math.PI*2); octx.stroke(); }
 function eraseAt(x,y){
   const r=14/view.z; let any=false;
-  for(let i=items.length-1;i>=0;i--){ const it=items[i]; if(!'srea'.includes(it.t)) continue;
+  for(let i=items.length-1;i>=0;i--){ const it=items[i]; if(!'sreac'.includes(it.t)) continue;
     if(hit(it,x,y,r)){ act.removed.push(cl(it)); removeItem(it.id); any=true; } }
   if(any) render();
 }
@@ -582,6 +720,66 @@ stage.addEventListener('wheel',e=>{
 ['gesturestart','gesturechange','gestureend'].forEach(n=>document.addEventListener(n,e=>e.preventDefault()));
 document.addEventListener('touchmove',e=>{ if(e.target!==editor&&!e.target.closest('#boards,#rail')) e.preventDefault(); },{passive:false});
 
+/* カレンダーの操作 */
+function addCalendar(){
+  const s=1/view.z, [cx,cy]=toW(W/2,H/2), d=new Date();
+  const it={t:'k',x:cx-CAL.W*s/2,y:cy-CAL.H*s/2,s,ym:d.getFullYear()*12+d.getMonth(),n:1,lay:'h',hc:'blue',dc:{}};
+  addNew(it); commit([{id:it.id,b:null,a:cl(it)}]); setTool('select'); sel.clear(); sel.add(it.id); render();
+}
+function calAction(id,ci,sx,sy){
+  const it=byId.get(id); if(!it) return;
+  if(ci.kind==='prev'||ci.kind==='next'){ const b=cl(it); it.ym+=ci.kind==='next'?1:-1; inval(it); commit([{id,b,a:cl(it)}]); render(); return; }
+  if(ci.kind==='date') openDatePop(id,ci,sx,sy);
+}
+const dpop=$('#datepop'); let dpState=null;
+function openDatePop(id,ci,sx,sy){
+  const it=byId.get(id), k=dkey(ci.yr,ci.m,ci.d), cur=(it.dc||{})[k], dw=DOWS[new Date(ci.yr,ci.m,ci.d).getDay()];
+  dpState={id,ci,k};
+  dpop.innerHTML=`<div class="dh">${ci.m+1}月${ci.d}日（${dw}）</div>
+    <div class="row">${DCOL.map(c=>`<button class="sw sq" data-dcol="${c}" aria-label="${NOTE[c][1]}" aria-pressed="${c===cur}" style="background:${NOTE[c][0]}"></button>`).join('')}
+    <button class="sw sq" data-dcol="" aria-label="色を消す" style="background:var(--panel);display:grid;place-items:center;font-weight:700;color:var(--muted)">×</button></div>
+    <button class="tbtn plain" data-dnote="1">この日の付箋を作る</button>`;
+  dpop.hidden=false; const w=dpop.offsetWidth,h=dpop.offsetHeight;
+  dpop.style.left=clamp(sx-w/2,8,W-w-8)+'px'; dpop.style.top=(sy+24+h>H-8?clamp(sy-h-24,8,H-h-8):sy+24)+'px';
+}
+function closeDatePop(){ dpop.hidden=true; dpState=null; }
+dpop.addEventListener('pointerdown',e=>e.stopPropagation());
+dpop.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b||!dpState) return; const {id,ci,k}=dpState, it=byId.get(id); if(!it){ closeDatePop(); return; }
+  if(b.dataset.dcol!==undefined){ const before=cl(it); const dc={...(it.dc||{})}; if(b.dataset.dcol) dc[k]=b.dataset.dcol; else delete dc[k]; it.dc=dc; commit([{id,b:before,a:cl(it)}]); closeDatePop(); render(); return; }
+  if(b.dataset.dnote){ const s=it.s, w=200*s, h=200*s, cb=bb(it); let x=cb[2]+28*s, y=ci.wy-h/2;
+    for(let i=0;i<30;i++){ const hitN=items.some(o=>o.t==='n'&&o.x<x+w&&o.x+o.w>x&&o.y<y+h&&o.y+o.h>y); if(!hitN) break; y+=h+14*s; }
+    const dw=DOWS[new Date(ci.yr,ci.m,ci.d).getDay()];
+    const n={t:'n',x,y,w,h,bg:(it.dc||{})[k]||prefs.col.note,fs:26*s,text:`${ci.m+1}/${ci.d}（${dw}）\n`};
+    addNew(n); commit([{id:n.id,b:null,a:cl(n)}]); closeDatePop(); setTool('select'); sel.clear(); sel.add(n.id); render(); toast('付箋を作りました。ダブルタップで書き込めます',2200); }
+});
+
+/* 保存の履歴（このiPadの中に、10分ごと・最大10件） */
+const SNAP_MAX=10, SNAP_EVERY=10*60*1000; let lastSnap=0;
+async function takeSnap(){ if(!boardId) return; const k='h:'+boardId; const list=(await sget(k))||[];
+  list.unshift({t:Date.now(),n:items.filter(i=>i.t!=='c').length,items:items.map(cl)}); await sset(k,list.slice(0,SNAP_MAX)); lastSnap=Date.now(); }
+let hAsk=null;
+async function renderHistory(){
+  const list=(await sget('h:'+boardId))||[], hv=$('#hview');
+  hv.innerHTML=`<div class="hbar"><button class="tbtn plain" data-hback="1">‹ ボード一覧</button><button class="tbtn plain" data-hsave="1">今の状態を残す</button></div>
+    <div class="lbl" style="padding:0 16px 6px">編集中は10分ごとに自動で残します（最大${SNAP_MAX}件）</div>
+    <div id="hlist">${list.length?list.map((h,i)=>hAsk===i
+      ?`<div class="brow"><span class="ask">${fmtDate(h.t)} に戻しますか</span><button class="tbtn danger" data-hgo="${i}">戻す</button><button class="tbtn plain" data-hno="1">やめる</button></div>`
+      :`<div class="brow"><span class="open">${fmtDate(h.t)}<small>${h.n} 個</small></span><button class="tbtn plain" data-hask="${i}">戻す</button></div>`).join('')
+      :'<div class="lbl" style="padding:10px">まだ履歴はありません</div>'}</div>`;
+}
+function showHistory(on){ $('#hview').hidden=!on; $('#blist').hidden=on; drawer.querySelector('.dfoot').hidden=on; $('#bh2').textContent=on?'このボードの履歴':'ボード'; hAsk=null; if(on) renderHistory(); }
+$('#hview').addEventListener('click',async e=>{ const b=e.target.closest('button'); if(!b) return; const d=b.dataset;
+  if(d.hback){ showHistory(false); renderBoards(); return; }
+  if(d.hsave){ await flush(); await takeSnap(); toast('今の状態を履歴に残しました'); renderHistory(); return; }
+  if(d.hask){ hAsk=+d.hask; renderHistory(); return; }
+  if(d.hno){ hAsk=null; renderHistory(); return; }
+  if(d.hgo){ const list=(await sget('h:'+boardId))||[], snap=list[+d.hgo]; if(!snap) return;
+    await flush(); await takeSnap();
+    const cur=new Map(items.map(i=>[i.id,cl(i)])), nxt=new Map(snap.items.map(i=>[i.id,i])), ch=[];
+    for(const id of new Set([...cur.keys(),...nxt.keys()])){ const b=cur.get(id)||null, a=nxt.get(id)?cl(nxt.get(id)):null; if(JSON.stringify(b)!==JSON.stringify(a)) ch.push({id,b,a}); }
+    endEdit(); for(const c of ch) setState(c.id,c.a); sel.clear(); commit(ch); closePanels(); render(); toast(fmtDate(snap.t)+' の状態に戻しました（取り消しもできます）',3000); }
+});
+
 /* ============ 文字の編集 ============ */
 function startEdit(it,isNew){
   endEdit(); editing={id:it.id,before:isNew?null:cl(it),isNew};
@@ -606,7 +804,7 @@ function endEdit(){
   if(!editing) return; const ed=editing; editing=null; editor.hidden=true; if(document.activeElement===editor) editor.blur();
   const it=byId.get(ed.id);
   if(it){ it.text=editor.value; inval(it);
-    if(it.t==='x'&&!it.text.trim()){ removeItem(it.id); if(!ed.isNew) commit([{id:it.id,b:ed.before,a:null}]); }
+    if(it.t==='x'&&!it.text.trim()){ const lc=linkedConns([it.id]).map(id=>({id,b:cl(byId.get(id)),a:null})); lc.forEach(c=>removeItem(c.id)); removeItem(it.id); if(!ed.isNew||lc.length) commit([...lc,{id:it.id,b:ed.before,a:null}]); }
     else if(ed.isNew||ed.before.text!==it.text) commit([{id:it.id,b:ed.before,a:cl(it)}]); }
   render();
 }
@@ -621,6 +819,7 @@ const IC={
  shape:'<rect x="3.5" y="10" width="10" height="10" rx="1.5"/><circle cx="16" cy="8" r="4.5"/>',
  note:'<path d="M5 4h14v10l-6 6H5z"/><path d="M13 20v-6h6"/>',
  text:'<path d="M5 7V4.5h14V7M12 4.5v15M9 19.5h6"/>',
+ calendar:'<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
  image:'<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-9 8.5"/>',
  r:'<rect x="4" y="6" width="16" height="12" rx="1"/>', e:'<ellipse cx="12" cy="12" rx="8.5" ry="6.5"/>', a:'<path d="M5 19L19 5M10 5h9v9"/>',
  trash:'<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.5a1.5 1.5 0 001.5 1.5h7a1.5 1.5 0 001.5-1.5L18 7M9 7V4.5h6V7"/>',
@@ -629,15 +828,16 @@ const IC={
  pencil:'<path d="M4 20l1-4L15.5 5.5a2.1 2.1 0 013 3L8 19z"/>'
 };
 const svg=k=>`<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${IC[k]}</svg>`;
-const TOOLS=[['select','選択 (V)'],['hand','手のひら (H)'],null,['pen','ペン (P)'],['hl','マーカー (M)'],['eraser','消しゴム (E)'],null,['shape','図形 (S)'],['note','付箋 (N)'],['text','テキスト (T)'],['image','画像を入れる']];
+const TOOLS=[['select','選択 (V)'],['hand','手のひら (H)'],null,['pen','ペン (P)'],['hl','マーカー (M)'],['eraser','消しゴム (E)'],null,['shape','図形 (S)'],['note','付箋 (N)'],['text','テキスト (T)'],['calendar','カレンダーを置く'],['image','画像を入れる']];
 const rail=$('#rail');
 rail.innerHTML=TOOLS.map(t=>t?`<button class="ib" data-tool="${t[0]}" aria-label="${t[1]}" title="${t[1]}">${svg(t[0])}</button>`:'<span class="sep"></span>').join('');
 let flyOpen=true;
 rail.addEventListener('click',e=>{ const b=e.target.closest('[data-tool]'); if(!b) return; const t=b.dataset.tool;
   if(t==='image'){ $('#imgFile').click(); return; }
+  if(t==='calendar'){ addCalendar(); return; }
   if(t===prefs.tool){ flyOpen=!flyOpen; } else { flyOpen=true; }
-  setTool(t); });
-function setTool(t){ endEdit(); prefs.tool=t; savePrefs(); if(t!=='select'){ sel.clear(); }
+  setTool(t,true); });
+function setTool(t,fromUser){ endEdit(); if(!fromUser) flyOpen=false; prefs.tool=t; savePrefs(); if(t!=='select'){ sel.clear(); }
   rail.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.tool===t)); buildFly(); octxClear(); render(); }
 function buildFly(){
   const f=$('#flyout'), t=prefs.tool; let h='';
@@ -646,7 +846,8 @@ function buildFly(){
   if(t==='pen') h=sw(INK,'pen',prefs.col.pen)+sz('pen',[4,7,12]);
   else if(t==='hl') h=sw(HL,'hl',prefs.col.hl)+sz('hl',[8,13,19]);
   else if(t==='shape') h=`<div class="row">${['r','e','a'].map(s=>`<button class="shp" data-shape="${s}" aria-label="${{r:'四角',e:'丸',a:'矢印'}[s]}" aria-pressed="${prefs.shape===s}">${svg(s)}</button>`).join('')}</div>`+sw(INK,'shape',prefs.col.shape)+sz('shape',[4,7,12]);
-  else if(t==='note') h=sw(NOTE,'note',prefs.col.note,true);
+  else if(t==='note') h=sw(NOTE,'note',prefs.col.note,true)+`<div class="row">${Object.keys(NSZ).map(k=>`<button class="tbn" data-nsize="${k}" aria-pressed="${prefs.nsize===k}">${k}</button>`).join('')}</div>`;
+  else if(t==='select') h=`<div class="row" style="flex-direction:column;align-items:stretch"><button class="tbn" data-multi="1" aria-pressed="${prefs.multi}">タップで追加選択：${prefs.multi?'オン':'オフ'}</button><button class="tbn" data-all="1">すべて選択</button></div>`;
   else if(t==='text') h=sw(INK,'text',prefs.col.text)+sz('text',[6,10,15]);
   f.innerHTML=h; f.hidden=!h||!flyOpen;
   if(!f.hidden){ const b=rail.querySelector(`[data-tool="${t}"]`).getBoundingClientRect(), r=rail.getBoundingClientRect();
@@ -656,10 +857,13 @@ $('#flyout').addEventListener('click',e=>{ const b=e.target.closest('button'); i
   if(b.dataset.col){ prefs.col[b.dataset.k]=b.dataset.col; }
   if(b.dataset.size){ prefs.size[b.dataset.k]=+b.dataset.size; }
   if(b.dataset.shape){ prefs.shape=b.dataset.shape; }
+  if(b.dataset.nsize){ prefs.nsize=b.dataset.nsize; }
+  if(b.dataset.multi){ prefs.multi=!prefs.multi; toast(prefs.multi?'タップするたびに選択に追加します（もう一度タップで外す）':'ふつうの選択に戻しました'); }
+  if(b.dataset.all){ sel.clear(); items.forEach(i=>sel.add(i.id)); render(); }
   savePrefs(); flyOpen=false; buildFly(); updDots(); });
 function updDots(){
   rail.querySelectorAll('[data-tool]').forEach(btn=>{ const t=btn.dataset.tool; let c=null;
-    if(t==='pen'||t==='shape'||t==='text') c=ink(prefs.col[t]); else if(t==='hl') c=(HL[prefs.col.hl]||HL.yellow)[0]; else if(t==='note') c=(NOTE[prefs.col.note]||NOTE.yellow)[0];
+    if(t==='select'&&prefs.multi) c=C.sel||'#2864dc'; else if(t==='pen'||t==='shape'||t==='text') c=ink(prefs.col[t]); else if(t==='hl') c=(HL[prefs.col.hl]||HL.yellow)[0]; else if(t==='note') c=(NOTE[prefs.col.note]||NOTE.yellow)[0];
     let d=btn.querySelector('.cdot'); if(!c){ if(d) d.remove(); return; }
     if(!d){ d=document.createElement('span'); d.className='cdot'; btn.appendChild(d); } d.style.background=c; });
 }
@@ -670,16 +874,26 @@ let selKey='';
 function updSelTools(){
   if(!sel.size||act||editing||!selBox){ st.hidden=true; selKey=''; return; }
   const list=[...sel].map(id=>byId.get(id)).filter(Boolean);
-  const hasNote=list.some(i=>i.t==='n'), hasInk=list.some(i=>'srea x'.includes(i.t)&&!(i.t==='s'&&i.hl)&&i.t!=='i');
-  const key=[...sel].join()+hasNote+hasInk+dark;
-  if(key!==selKey){ selKey=key; let h='';
-    if(hasNote) h+=Object.entries(NOTE).map(([k,v])=>`<button class="sw sq" data-scol="${k}" data-kind="n" aria-label="${v[1]}" style="background:${v[0]}"></button>`).join('')+'<span class="sep"></span>';
-    if(hasInk) h+=Object.entries(INK).map(([k,v])=>`<button class="sw" data-scol="${k}" data-kind="ink" aria-label="${v[2]}" style="background:${v[dark?1:0]}"></button>`).join('')+'<span class="sep"></span>';
-    h+=`<button class="ib" data-sact="front" aria-label="前面へ" title="前面へ">${svg('front')}</button><button class="ib" data-sact="dup" aria-label="複製" title="複製">${svg('dup')}</button><button class="ib" data-sact="del" aria-label="削除" title="削除">${svg('trash')}</button>`;
-    st.innerHTML=h; }
+  const hasNote=list.some(i=>i.t==='n'), hasText=list.some(i=>i.t==='n'||i.t==='x'), hasInk=list.some(i=>'sreacx'.includes(i.t)&&!(i.t==='s'&&i.hl));
+  const cal=list.length===1&&list[0].t==='k'?list[0]:null;
+  const gs=new Set(list.map(i=>i.g).filter(Boolean)), oneGroup=gs.size===1&&list.every(i=>i.g);
+  const canGroup=list.filter(i=>i.t!=='c').length>=2&&!oneGroup, canUngroup=gs.size>0;
+  const key=[...sel].join()+dark+(cal?[cal.n,cal.lay,cal.hc].join():'')+canGroup+canUngroup;
+  if(key!==selKey){ selKey=key; let r1='', r2='';
+    if(hasNote) r1+=Object.entries(NOTE).map(([k,v])=>`<button class="sw sq" data-scol="${k}" data-kind="n" aria-label="${v[1]}" style="background:${v[0]}"></button>`).join('');
+    if(hasInk) r1+=(r1?'<span class="sep"></span>':'')+Object.entries(INK).map(([k,v])=>`<button class="sw" data-scol="${k}" data-kind="ink" aria-label="${v[2]}" style="background:${v[dark?1:0]}"></button>`).join('');
+    if(cal) r1+=Object.entries(INK).map(([k,v])=>`<button class="sw" data-hc="${k}" aria-label="見出しを${v[2]}に" aria-pressed="${cal.hc===k}" style="background:${v[0]}"></button>`).join('');
+    if(cal) r2+=`<button class="tbn" data-cal="-1" aria-label="月を減らす">−</button><span class="lbl">${cal.n}か月</span><button class="tbn" data-cal="1" aria-label="月を増やす">＋</button>
+      <button class="tbn" data-lay="h" aria-pressed="${cal.lay!=='v'}">横</button><button class="tbn" data-lay="v" aria-pressed="${cal.lay==='v'}">縦</button><button class="tbn" data-today="1">今月</button><span class="sep"></span>`;
+    if(hasNote) r2+=Object.keys(NSZ).map(k=>`<button class="tbn" data-nsz="${k}">${k}</button>`).join('')+'<span class="sep"></span>';
+    if(hasText) r2+=`<button class="tbn" data-fs="-1" aria-label="文字を小さく">A−</button><button class="tbn" data-fs="1" aria-label="文字を大きく">A＋</button><span class="sep"></span>`;
+    if(canGroup) r2+=`<button class="tbn" data-sact="group">グループ</button>`;
+    if(canUngroup) r2+=`<button class="tbn" data-sact="ungroup">グループ解除</button>`;
+    r2+=`<button class="ib" data-sact="front" aria-label="前面へ" title="前面へ">${svg('front')}</button><button class="ib" data-sact="dup" aria-label="複製" title="複製">${svg('dup')}</button><button class="ib" data-sact="del" aria-label="削除" title="削除">${svg('trash')}</button>`;
+    st.innerHTML=(r1?`<div class="srow">${r1}</div>`:'')+`<div class="srow">${r2}</div>`; }
   st.hidden=false;
   const w=st.offsetWidth,hh=st.offsetHeight, cx=(selBox[0]+selBox[2])/2;
-  let top=selBox[1]-hh-12; if(top<70) top=selBox[3]+16; if(top+hh>H-8) top=Math.max(70,selBox[1]+8);
+  const gp=connH?38:12; let top=selBox[1]-hh-gp; if(top<70) top=selBox[3]+gp+4; if(top+hh>H-8) top=Math.max(70,selBox[1]+8);
   st.style.left=clamp(cx-w/2,8,W-w-8)+'px'; st.style.top=clamp(top,8,H-hh-8)+'px';
 }
 st.addEventListener('pointerdown',e=>e.stopPropagation());
@@ -690,12 +904,22 @@ st.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) retu
       if(kind==='n'&&it.t==='n') it.bg=k; else if(kind==='ink'&&it.t!=='n'&&it.t!=='i'&&!(it.t==='s'&&it.hl)) it.col=k; else continue;
       ch.push({id,b:before,a:cl(it)}); }
     commit(ch); selKey=''; render(); return; }
+  const edit=(pred,fn)=>{ for(const id of ids){ const it=byId.get(id); if(!it||!pred(it)) continue; const before=cl(it); fn(it); inval(it); ch.push({id,b:before,a:cl(it)}); } commit(ch); selKey=''; render(); };
+  if(b.dataset.hc){ return edit(i=>i.t==='k',i=>{ i.hc=b.dataset.hc; }); }
+  if(b.dataset.cal){ return edit(i=>i.t==='k',i=>{ i.n=clamp((i.n||1)+(+b.dataset.cal),1,12); }); }
+  if(b.dataset.lay){ return edit(i=>i.t==='k',i=>{ i.lay=b.dataset.lay; }); }
+  if(b.dataset.today){ const d=new Date(); return edit(i=>i.t==='k',i=>{ i.ym=d.getFullYear()*12+d.getMonth(); }); }
+  if(b.dataset.nsz){ const px0=NSZ[b.dataset.nsz], w=px0/view.z; return edit(i=>i.t==='n',i=>{ const cx=i.x+i.w/2, cy=i.y+i.h/2; i.w=i.h=w; i.x=cx-w/2; i.y=cy-w/2; i.fs=px0*0.136/view.z; }); }
+  if(b.dataset.fs){ const f=+b.dataset.fs>0?1.18:0.85; return edit(i=>i.t==='n'||i.t==='x',i=>{ i.fs*=f; }); }
   const act2=b.dataset.sact;
-  if(act2==='del'){ for(const id of attachedTo(ids)){ const it=byId.get(id); ch.push({id,b:cl(it),a:null}); removeItem(id);} commit(ch); sel.clear(); render(); }
+  if(act2==='group'){ const gid=uid(); return edit(i=>i.t!=='c',i=>{ i.g=gid; }); }
+  if(act2==='ungroup'){ return edit(i=>!!i.g,i=>{ delete i.g; }); }
+  if(act2==='del'){ const dl=attachedTo(ids); for(const id of [...linkedConns(dl),...dl]){ const it=byId.get(id); ch.push({id,b:cl(it),a:null}); removeItem(id);} commit(ch); sel.clear(); render(); }
   if(act2==='front'){ const all=attachedTo(ids).map(id=>byId.get(id)).sort((a,b)=>a.z-b.z); for(const it of all){ const before=cl(it); const n=cl(it); n.z=++maxZ; setState(it.id,n); ch.push({id:it.id,b:before,a:n}); } ids.forEach(id=>sel.add(id)); commit(ch); render(); }
   if(act2==='dup'){ const off=24/view.z, all=attachedTo(ids).map(id=>byId.get(id)).sort((a,b)=>a.z-b.z); const map={}; sel.clear();
-    for(const it of all){ const n=cl(it); delete n.id; moveItem(n,off,off); addNew(n); map[it.id]=n.id; ch.push({id:n.id,b:null,a:cl(n)}); }
-    ids.forEach(id=>sel.add(map[id])); commit(ch); render(); }
+    const gmap={}; for(const it of all){ const n=cl(it); delete n.id; if(n.g) n.g=gmap[n.g]||(gmap[n.g]=uid()); moveItem(n,off,off); addNew(n); map[it.id]=n.id; ch.push({id:n.id,b:null,a:cl(n)}); }
+    for(const it of items.slice()){ if(it.t==='c'&&map[it.a]&&map[it.b]&&!map[it.id]){ const n=cl(it); delete n.id; n.a=map[it.a]; n.b=map[it.b]; addNew(n); ch.push({id:n.id,b:null,a:cl(n)}); } }
+    ids.forEach(id=>{ if(map[id]) sel.add(map[id]); }); commit(ch); render(); }
 });
 
 /* ペンシル・指で押したボタンは、離した瞬間に反応させる */
@@ -726,7 +950,7 @@ function fitAll(){ const b=unionBB(items); if(!b){ view.z=1; view.tx=W/2; view.t
 /* ボード一覧 */
 const drawer=$('#boards');
 $('#boardBtn').onclick=e=>{ e.stopPropagation(); if(drawer.hidden){ renderBoards(); drawer.hidden=false; $('#boardBtn').setAttribute('aria-expanded','true'); } else closePanels(); };
-function closePanels(){ if(!drawer.hidden){ drawer.hidden=true; $('#boardBtn').setAttribute('aria-expanded','false'); } }
+function closePanels(){ if(!drawer.hidden){ drawer.hidden=true; showHistory(false); $('#boardBtn').setAttribute('aria-expanded','false'); } if(!dpop.hidden) closeDatePop(); }
 let bEdit=null,bAsk=null;
 function fmtDate(t){ if(!t) return ''; const d=new Date(t); return `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`; }
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -756,7 +980,7 @@ function updName(){ const b=boards.find(b=>b.id===boardId); $('#boardName').text
 
 async function createBoard(name,arr){ const id=uid(); boards.push({id,name,u:Date.now()}); await sset('b:'+id,{items:arr}); await sset('index',{boards,cur:boardId||id}); return id; }
 async function deleteBoard(id){
-  boards=boards.filter(b=>b.id!==id); await sdel('b:'+id); try{localStorage.removeItem('bn.v.'+id)}catch(e){}
+  boards=boards.filter(b=>b.id!==id); await sdel('b:'+id); await sdel('h:'+id); try{localStorage.removeItem('bn.v.'+id)}catch(e){}
   if(id===boardId){ boardId=null; if(!boards.length){ const nid=await createBoard('ボード 1',[]); await openBoard(nid); } else await openBoard(boards.slice().sort((a,b)=>(b.u||0)-(a.u||0))[0].id); }
   await sset('index',{boards,cur:boardId}); toast('ボードを削除しました');
 }
@@ -768,6 +992,7 @@ async function openBoard(id){
   let v=null; try{ v=JSON.parse(localStorage.getItem('bn.v.'+id)||'null'); }catch(e){}
   if(v&&isFinite(v.z)) Object.assign(view,v); else fitAll();
   await sset('index',{boards,cur:id}); updName(); render();
+  const hl=(await sget('h:'+id))||[]; lastSnap=hl[0]?hl[0].t:0; if(items.length&&Date.now()-lastSnap>SNAP_EVERY) await takeSnap();
 }
 
 /* 画像 */
@@ -806,6 +1031,7 @@ $('#backupBtn').onclick=async()=>{ closePanels(); await flush(); const all=[];
   for(const b of boards){ const r=await sget('b:'+b.id); all.push({...b,items:(r&&r.items)||[]}); }
   const d=new Date(), ts=`${String(d.getFullYear()).slice(2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`;
   await saveFile(`${ts}ボードノート.json`,new Blob([JSON.stringify({app:'boardnote',v:1,boards:all})],{type:'application/json'})); };
+$('#histBtn').onclick=()=>showHistory(true);
 $('#restoreBtn').onclick=()=>{ closePanels(); $('#restoreFile').click(); };
 $('#restoreFile').onchange=async e=>{ const f=e.target.files[0]; e.target.value=''; if(!f) return;
   try{ const d=JSON.parse(await f.text()); if(d.app!=='boardnote'||!Array.isArray(d.boards)) throw 0; let n=0, last=null;
